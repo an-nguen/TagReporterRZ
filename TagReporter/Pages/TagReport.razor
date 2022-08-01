@@ -1,0 +1,199 @@
+@page "/TagReport"
+@using TagReporter.Services
+@using BlazorDownloadFile
+@using TagReporter.Domains
+@using Plotly.Blazor.Traces.ScatterLib
+@using System.IO
+
+@inject TagService TagService
+@inject AccountService AccountService
+@inject ReportService ReportService
+@inject IBlazorDownloadFileService BlazorDownloadFileService
+@inject NotificationService NotificationService
+
+@attribute [Authorize]
+<div class="mb-3 row justify-content-start align-items-center">
+    <div class="col-6 d-flex align-items-center">
+        <h3>Отчёты по тегам</h3>
+    </div>
+    <div class="col-6 text-right">
+        <RadzenButton Disabled="@Loading" Icon="cloud_download" Text="Загрузить с облака теги" Click="@(async () => await UpdateTags())"></RadzenButton>
+    </div>
+</div>
+<div class="mb-3">
+    <RadzenDataGrid Data="Tags" TItem="Tag" AllowRowSelectOnRowClick="true" AllowFiltering="true"
+                    AllowPaging="true" PageSize="15"
+                    FilterMode="FilterMode.Advanced"
+                    @ref="_tagGrid" SelectionMode="DataGridSelectionMode.Multiple"
+                    AllowSorting="true" @bind-Value="@_selectedTags">
+        <Columns>
+            <RadzenDataGridColumn TItem="Tag" Width="40px" Sortable="false" Filterable="false">
+                <HeaderTemplate>
+                    <RadzenCheckBox TriState="false" TValue="bool"
+                                    Value="@(Tags.Any(i => _selectedTags != null && _selectedTags.Contains(i)))"
+                                    Change="@(args => _selectedTags = args ? Tags.ToList() : null)">
+                    </RadzenCheckBox>
+                </HeaderTemplate>
+                <Template Context="data">
+                    <RadzenCheckBox TriState="false" Value="@(_selectedTags != null && _selectedTags.Contains(data))"
+                                    TValue="bool">
+                    </RadzenCheckBox>
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="Tag" Property="Name" Title="Тег" Filterable="true"/>
+            <RadzenDataGridColumn TItem="Tag" Property="TagManagerName" Title="Менеджер" Filterable="true"/>
+            <RadzenDataGridColumn TItem="Tag" Property="Account.Email" Title="Почта" Filterable="true"/>
+            <RadzenDataGridColumn TItem="Tag" Property="Uuid" Title="UUID" Filterable="true"/>
+        </Columns>
+    </RadzenDataGrid>
+</div>
+<div class="mb-3">
+    <p>После каждого создания отчёта нужно подождать 15-30 секунд</p>
+</div>
+@if (Loading)
+{
+    <RadzenProgressBar Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate"/>
+}
+<div class="mb-3">
+    <RadzenDatePicker @bind-Value="StartDate" DateFormat="d" TValue="DateTimeOffset?" ShowTime="false" ShowSeconds="false"></RadzenDatePicker>
+    <RadzenDatePicker @bind-Value="EndDate" DateFormat="d" TValue="DateTimeOffset?" ShowTime="false" ShowSeconds="false"></RadzenDatePicker>
+</div>
+<div class="mb-3">
+    <RadzenButton Icon="summarize" Disabled="@(!IsChecked() || Loading || StartDate == null || EndDate == null)" Click="CreateReport" Text="Создать отчёт"></RadzenButton>
+    <RadzenButton Icon="download" Disabled="@(_loadedZones == null || Loading)" Click="DownloadReport" Text="Загрузить отчёт"></RadzenButton>
+</div>
+<ChartTabs @ref="_chartTabs" TempData="_tempData" CapData="_capData"></ChartTabs>
+
+@code {
+    private ChartTabs? _chartTabs;
+
+    private List<ITrace> _tempData = new();
+    private List<ITrace> _capData = new();
+
+
+    private List<Tag> Tags { get; set; } = new();
+    private IList<Tag>? _selectedTags;
+    private RadzenDataGrid<Tag>? _tagGrid;
+
+    private DateTimeOffset? StartDate { get; set; }
+    private DateTimeOffset? EndDate { get; set; }
+    private bool Loading { get; set; }
+
+    private List<Zone>? _loadedZones;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Tags = await TagService.FindAll();
+    }
+
+
+    private bool IsChecked() => _selectedTags?.Count > 0;
+
+    private async Task CreateReport()
+    {
+        if (StartDate == null || EndDate == null || _selectedTags == null) return;
+        Loading = true;
+        var zone = new Zone
+        {
+            Name = "Custom",
+            Checked = true,
+            Tags = new List<Tag>()
+        };
+        zone.TagUuids.AddRange(_selectedTags.Select(t => t.Uuid));
+        // Load measurements and assign Tags property in zone
+        if (_loadedZones != null)
+        {
+            _loadedZones.Clear();
+            _loadedZones.Add(zone);
+        }
+        else
+        {
+            _loadedZones = new List<Zone> { zone };
+        }
+        await ReportService.LoadMeasurements(_loadedZones, (DateTimeOffset)StartDate, (DateTimeOffset)EndDate);
+        _tempData.Clear();
+        _capData.Clear();
+        _loadedZones.ForEach(z =>
+        {
+            z.Tags.ForEach(t =>
+            {
+                if (t.Measurements.Count == 0) return;
+                var tempScatter = new Scatter
+                {
+                    Name = t.Name,
+                    Mode = ModeFlag.Lines | ModeFlag.Markers,
+                    X = new List<object>(),
+                    Y = new List<object>()
+                };
+
+                var capScatter = new Scatter
+                {
+                    Name = t.Name,
+                    Mode = ModeFlag.Lines | ModeFlag.Markers,
+                    X = new List<object>(),
+                    Y = new List<object>()
+                };
+                var values = t.Measurements.ToList();
+                var x = values.Select(v => v.DateTime as object).ToList();
+                var temp = values.Select(v => v.TemperatureValue as object).ToList();
+                var cap = values.Select(v => v.Cap as object).ToList();
+                tempScatter.X.AddRange(x);
+                capScatter.X.AddRange(x);
+
+                tempScatter.Y.AddRange(temp);
+                capScatter.Y.AddRange(cap);
+
+                _tempData.Add(tempScatter);
+                _capData.Add(capScatter);
+            });
+        });
+        await _chartTabs!.Chart.Update();
+
+        Loading = false;
+    }
+
+    private async Task<DownloadFileResult?> DownloadReport()
+    {
+        if (_loadedZones == null) return null;
+        Loading = true;
+        var (filepath, filename) = ReportService.GenerateReport(_loadedZones[0], (DateTimeOffset)StartDate!, (DateTimeOffset)EndDate!);
+        var bytes = await File.ReadAllBytesAsync(filepath);
+        Loading = false;
+        return await BlazorDownloadFileService.DownloadFile(filename, bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+
+    private async Task UpdateTags()
+    {
+        Loading = true;
+        var accounts = await AccountService.FindAll();
+
+    // Remove all tags from database
+        TagService.RemoveAll();
+        Tags.Clear();
+        try
+        {
+            foreach (var account in accounts)
+            {
+                await account.SignIn(CommonResources.BaseAddress);
+                await TagService.StoreTagsFromCloud(account);
+            }
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = e.Message,
+                Severity = NotificationSeverity.Error,
+                Duration = 5000,
+                Summary = "Ошибка"
+            });
+            Loading = false;
+        }
+        Tags.AddRange(await TagService.FindAll());
+        if (_tagGrid != null)
+            await _tagGrid.Reload();
+        Loading = false;
+    }
+
+}

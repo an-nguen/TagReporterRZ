@@ -1,0 +1,268 @@
+@page "/EditJob"
+@page "/EditJob/{id?}"
+@using Hangfire.Storage
+@using TagReporter.Services
+@using TagReporter.Utils
+@using TagReporter.Domains
+@using System.Diagnostics.CodeAnalysis
+@using Hangfire
+@using Cronos
+
+@inject ZoneService ZoneService
+@inject ReportService ReportService
+@inject NavigationManager NavigationManager
+@inject NotificationService NotificationService
+
+@attribute [Authorize]
+
+@if (string.IsNullOrEmpty(Id))
+{
+    <h3>Создать задачу</h3>
+}
+else
+{
+    <h3>Изменить задачу</h3>
+}
+<div class="row mb-3">
+    <div class="col">
+        <RadzenDataGrid TItem="Zone" Data="_zones" AllowSorting="true" AllowFiltering="true"
+                        AllowColumnResize="true"
+                        SelectionMode="DataGridSelectionMode.Multiple" AllowRowSelectOnRowClick="true"
+                        ExpandMode="DataGridExpandMode.Single"
+                        @ref="_zoneGrid"
+                        @bind-Value="@_selectedZones">
+            <Template Context="zone">
+                <RadzenDataGrid TItem="Tag" Data="zone.Tags">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="Tag" Title="Тег" Property="Name"></RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="Tag" Title="Менеджер" Property="TagManagerName"></RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </Template>
+            <Columns>
+                <RadzenDataGridColumn TItem="Zone" Sortable="false" Filterable="false">
+                    <HeaderTemplate>
+                        <RadzenCheckBox TriState="false" TValue="bool"
+                                        Value="@(_zones.Any(i => _selectedZones != null && _selectedZones.Contains(i)))"
+                                        Change="@(args => { _selectedZones = args ? _zoneGrid?.View.ToList() : null; })">
+                        </RadzenCheckBox>
+                    </HeaderTemplate>
+                    <Template Context="data">
+                        <RadzenCheckBox TriState="false" Value="@(_selectedZones != null && _selectedZones.Contains(data))"
+                                        TValue="bool">
+                        </RadzenCheckBox>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Zone" Property="Name" Title="Зона" Sortable="true" Filterable="true">
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </div>
+</div>
+
+<div class="mb-3">
+    <h4 class="mb-3">Заданное время в виде выражения Cron</h4>
+    <RadzenTextBox placeholder="0-59 0-23 1-31(День месяца) 1-12(Месяц) 0-6(День недели)" @bind-Value="Expression"/>
+    <div>
+        <a href="https://www.ibm.com/docs/ru/urbancode-release/6.1.0?topic=interval-cron-expressions-defining-frequency">Cron выражения</a>
+    </div>
+</div>
+<div class="mb-3">
+    <h4 class="mb-3">С какого часа</h4>
+    <RadzenNumeric TValue="int" @bind-Value="BeginTimeInHour"/>
+</div>
+<div class="mb-3">
+    <h4 class="mb-3">Временое смещение назад в часах (Time Offset) от заданного времени указанного выше</h4>
+    <RadzenNumeric TValue="int" @bind-Value="TimeOffsetInHours"/>
+</div>
+<div class="mb-3">
+    <h4 class="mb-3">Папка для сохранения в \\10.10.10.14\QualityShare</h4>
+    <RadzenTextBox class="w-25" @bind-Value="SavePath"></RadzenTextBox>
+</div>
+<div class="mb-3">
+    <h4 class="mb-3">Эл. почта получателя</h4>
+    <div class="mb-3">
+        <RadzenTextBox class="mr-3" @bind-Value="RecipientEmail"/>
+        <RadzenButton Icon="add" Text="Добавить" Click="AddEmail"></RadzenButton>
+    </div>
+    <RadzenDataGrid @ref="@_emailGrid" TItem="string" Data="@RecipientEmailList">
+        <Columns>
+            <RadzenDataGridColumn TItem="string" Title="Почта">
+                <Template Context="data">
+                    @data
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="string" Sortable="false" Filterable="false">
+                <Template Context="data">
+                    <RadzenButton Icon="delete" Click="() => RemoveEmail(data)">Удалить</RadzenButton>
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+    </RadzenDataGrid>
+</div>
+<div class="mb-3">
+    @if (string.IsNullOrEmpty(Id))
+    {
+        <RadzenButton Icon="add" Text="Создать" Click="CreateJob"></RadzenButton>
+    }
+    else
+    {
+        <RadzenButton Icon="edit" Text="Применить" Click="UpdateJob"></RadzenButton>
+    }
+</div>
+
+@code {
+
+
+    [Parameter, AllowNull]
+    public string Id { get; set; }
+
+    private string? Expression { get; set; }
+    private int BeginTimeInHour { get; set; }
+    private int TimeOffsetInHours { get; set; }
+    private string? SavePath { get; set; }
+
+    private string? RecipientEmail { get; set; }
+    private IList<string> RecipientEmailList { get; set; } = new List<string>();
+
+    private List<Zone> _zones = new();
+    private IList<Zone>? _selectedZones;
+
+    private RadzenDataGrid<Zone>? _zoneGrid;
+    private RadzenDataGrid<string>? _emailGrid;
+
+    private Dictionary<string, string> _errorDict = new()
+    {
+        { "zone", "Не выбраны зоны" },
+        { "email", "Не заполнены почты" },
+        { "cron", "Не задано cron-выражение" },
+        { "savePath", "Не задан путь сохранения" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _zones = await ZoneService.FindAllAsync();
+
+        if (string.IsNullOrEmpty(Id)) return;
+        var job = JobStorage.Current.GetConnection().GetRecurringJobs().Find(j => j.Id == Id);
+        if (job != null)
+        {
+            _selectedZones ??= new List<Zone>();
+            Expression = job.Cron;
+            if (job.Job.Args[0] is List<Zone> zones)
+            {
+                var ids = zones.Select(zone => zone.Id);
+                var list = _zones.Where(z => ids.Contains(z.Id));
+                _selectedZones.AddRange(list);
+            }
+
+            if (job.Job.Args[1] is List<string> emails) RecipientEmailList.AddRange(emails);
+            if (job.Job.Args[3] is int beginTime) BeginTimeInHour = beginTime;
+            if (job.Job.Args[4] is int offset) TimeOffsetInHours = offset;
+            if (job.Job.Args[5] is string savePath) SavePath = savePath;
+        }
+        else
+        {
+            NavigationManager.NavigateTo("RecurrentJobs");
+        }
+        _zoneGrid?.Reload();
+        _emailGrid?.Reload();
+    }
+
+    private (bool, string?) IsJobValid()
+    {
+        if (_selectedZones == null || _selectedZones.Count == 0)
+            return (false,  _errorDict["zone"]);
+        if (RecipientEmailList.Count == 0)
+            return (false,  _errorDict["email"]);
+        if (Expression == null)
+            return (false, _errorDict["cron"]);
+        if (string.IsNullOrEmpty(SavePath))
+            return (false, _errorDict["savePath"]);
+
+        return (true, null);
+    }
+
+    private void CreateJob()
+    {
+        var (isValid, err) = IsJobValid();
+        if (!isValid)
+        {
+            NotifyError(err ?? "");
+            return;
+        }
+        try
+        {
+            CronExpression.Parse(Expression);
+
+            ReportService.EnqueueJob(new List<Zone>(_selectedZones!), 
+                new List<string>(RecipientEmailList), 
+                Expression!, BeginTimeInHour, TimeOffsetInHours, SavePath!);
+            NavigationManager.NavigateTo("RecurrentJobs");
+        }
+        catch (Exception e)
+        {
+            NotifyError(e.Message);
+        }
+    }
+
+    private void NotifyError(string detail)
+    {
+        NotificationService.Notify(new NotificationMessage
+        {
+            Detail = detail,
+            Severity = NotificationSeverity.Error,
+            Duration = 5000,
+            Summary = "Ошибка"
+        });
+    }
+
+    private void UpdateJob()
+    {
+        var (isValid, err) = IsJobValid();
+        if (!isValid)
+        {
+            NotifyError(err ?? "");
+            return;
+        }
+        try
+        {
+            // Check expression
+            CronExpression.Parse(Expression);
+
+            ReportService.UpdateJob(Id, new List<Zone>(_selectedZones!), 
+                new List<string>(RecipientEmailList), 
+                Expression!, BeginTimeInHour, TimeOffsetInHours, SavePath!);
+            NavigationManager.NavigateTo("RecurrentJobs");
+        }
+        catch (Exception e)
+        {
+            NotifyError(e.Message);
+        }
+    }
+
+    private void AddEmail()
+    {
+        if (string.IsNullOrEmpty(RecipientEmail) || !RegexUtils.ValidateEmail(RecipientEmail))
+        {
+            NotifyError("Неверная почта!");
+            return;
+        }
+        if (RecipientEmailList.Contains(RecipientEmail))
+        {
+            NotifyError("Почта уже в списке!");
+            return;
+        }
+
+        RecipientEmailList.Add(RecipientEmail);
+        RecipientEmail = "";
+        _emailGrid?.Reload();
+    }
+
+    private void RemoveEmail(string email)
+    {
+        RecipientEmailList.Remove(email);
+        _emailGrid?.Reload();
+    }
+
+}

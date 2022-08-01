@@ -1,0 +1,71 @@
+@page "/AppUsers"
+@using TagReporter.Domains
+@using TagReporter.Services
+
+@inject UserService UserService
+@inject NavigationManager NavigationManager
+@inject NotificationService NotificationService
+@attribute [Authorize(Roles = "ADMIN")]
+
+<div class="mb-3 row justify-content-start align-items-center">
+    <div class="col-6 d-flex align-items-center">
+        <h3>Список пользователей</h3>
+    </div>
+    <div class="col-6 text-right">
+        <RadzenButton Icon="add" Text="Добавить" Click="AddUser"></RadzenButton>
+    </div>
+</div>
+<RadzenDataGrid @ref="_userGrid" TItem="ApplicationUser" Data="_users" AllowSorting="true">
+    <Columns>
+        <RadzenDataGridColumn TItem="ApplicationUser" Property="UserName" Title="Имя пользователя" Sortable="true">
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApplicationUser" Property="Email" Title="Почта" Sortable="true">
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApplicationUser" Sortable="false" Filterable="false" Title="Действия">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Secondary" Click="() => UpdateUser(data.Id)">
+                </RadzenButton>
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => DeleteUser(data)">
+                </RadzenButton>
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    private List<ApplicationUser> _users = new();
+    private RadzenDataGrid<ApplicationUser>? _userGrid;
+
+    protected override Task OnInitializedAsync()
+    {
+        _users = UserService.FindAll();
+        return Task.CompletedTask;
+    }
+
+    private void AddUser()
+    {
+        NavigationManager.NavigateTo("AppUserEdit");
+    }
+    
+    private void UpdateUser(string id)
+    {
+        NavigationManager.NavigateTo($"AppUserEdit/{id}");
+    }
+
+    private async Task DeleteUser(ApplicationUser user)
+    {
+        try
+        {
+            await UserService.Delete(user.UserName);
+            _users.Remove(user);
+            if (_userGrid != null)
+                await _userGrid.Reload();
+            NotificationService.Notify(NotificationSeverity.Success, "Успех", "Пользователь удалён");
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Ошибка", e.Message);   
+        }
+    }
+
+}

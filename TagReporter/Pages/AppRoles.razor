@@ -1,0 +1,67 @@
+@page "/AppRoles"
+@using TagReporter.Services
+@using TagReporter.Domains
+@inject RoleService RoleService
+@inject NavigationManager NavigationManager
+@inject NotificationService NotificationService
+@attribute [Authorize(Roles = "ADMIN")]
+
+<div class="mb-3 row justify-content-start align-items-center">
+    <div class="col-6 d-flex align-items-center">
+        <h3>Список ролей</h3>
+    </div>
+    <div class="col-6 text-right">
+        <RadzenButton Icon="add" Text="Добавить" Click="AddRole"></RadzenButton>
+    </div>
+</div>
+<RadzenDataGrid TItem="ApplicationRole" @ref="_dataGrid" Data="Roles">
+    <Columns>
+        <RadzenDataGridColumn TItem="ApplicationRole" Property="Id" Title="ID" Sortable="true">
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApplicationRole" Property="Name" Title="Имя роли" Sortable="true">
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApplicationRole" Sortable="false" Filterable="false" Title="Действия">
+            <Template Context="data">
+                @if (data.Name != "ADMIN")
+                {
+                    <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => DeleteRole(data)">
+                    </RadzenButton>
+                }
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    List<ApplicationRole> Roles { get; set; } = new();
+    RadzenDataGrid<ApplicationRole>? _dataGrid;
+
+    protected override Task OnInitializedAsync()
+    {
+        Roles = RoleService.FindAll();
+        return Task.CompletedTask;
+    }
+
+    private void AddRole()
+    {
+        NavigationManager.NavigateTo("AppRoleCreate");
+    }
+
+    private async Task DeleteRole(ApplicationRole role)
+    {
+        var identityResult = await RoleService.Delete(role);
+        if (!identityResult.Succeeded)
+        {
+            NotificationService.Notify(NotificationSeverity.Error,
+                "Ошибка",
+                $"{identityResult.Errors.Select(e => e.Description + '\n')}");
+        }
+        else
+        {
+            NotificationService.Notify(NotificationSeverity.Success, "Успех", "Роль удалена");
+            Roles.Remove(role);
+            _dataGrid?.Reload();
+        }
+    }
+
+}

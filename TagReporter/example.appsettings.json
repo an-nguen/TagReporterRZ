@@ -1,0 +1,26 @@
+{
+  "TagReporterDatabaseSettings": {
+    "ConnectionString": "your-connection-string",
+    "DatabaseName": "TagReporterDb",
+    "ZoneCollectionName": "Zones",
+    "TagCollectionName": "Tags",
+    "ZoneGroupCollectionName": "ZoneGroups",
+    "ConfigCollectionName": "Configs",
+    "AccountCollectionName": "Accounts"
+  },
+  "EmailSettings": {
+    "Email": "your-email",
+    "Password": "your-password",
+    "SmtpServer": "your-smtp-server",
+    "SmtpServerPort": 465
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning",
+      "Microsoft.Hosting.Lifetime": "Information",
+      "Hangfire": "Information"
+    }
+  },
+  "AllowedHosts": "*"
+}

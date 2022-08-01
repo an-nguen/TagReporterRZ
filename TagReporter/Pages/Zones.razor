@@ -1,0 +1,70 @@
+@page "/Zones"
+@using TagReporter.Services
+@using TagReporter.Domains
+
+@inject ZoneService ZoneService
+@inject NavigationManager NavigationManager
+@inject NotificationService NotificationService
+
+@attribute [Authorize]
+
+<div class="mb-3 row justify-content-start align-items-center">
+    <div class="col-6 d-flex align-items-center">
+        <h3>Зоны</h3>
+    </div>
+    <div class="col-6 text-right">
+        <RadzenButton Icon="add" Text="Добавить" Click="AddZone"></RadzenButton>
+    </div>
+</div>
+<RadzenDataGrid @ref="_zoneGrid" TItem="Zone" Data="_zones" AllowSorting="true">
+    <Columns>
+        <RadzenDataGridColumn TItem="Zone" Property="Name" Title="Название" Sortable="true"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Zone" Title="Действия">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Secondary" Click="() => EditZone(data.Id)"></RadzenButton>
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => RemoveZone(data)"></RadzenButton>
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    private List<Zone> _zones = new();
+    private RadzenDataGrid<Zone>? _zoneGrid;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _zones = await ZoneService.FindAllAsync();
+    }
+
+    private void AddZone()
+    {
+        NavigationManager.NavigateTo("ZoneEdit");
+    }
+
+    private void EditZone(int id)
+    {
+        NavigationManager.NavigateTo($"ZoneEdit/{id}");
+    }
+
+    private async Task RemoveZone(Zone zone)
+    {
+        try
+        {
+            await ZoneService.Delete(zone.Id);
+            _zones.Remove(zone);
+            if (_zoneGrid != null)
+                await _zoneGrid.Reload();
+            NotificationService.Notify(NotificationSeverity.Success, "Успех", "Зона удалена");
+        } catch (Exception e) 
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = e.Message,
+                Duration = 5000,
+                Severity = NotificationSeverity.Error,
+                Summary = "Error"
+            });
+        }
+    }
+}

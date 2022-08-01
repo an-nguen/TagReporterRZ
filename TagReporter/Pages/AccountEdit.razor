@@ -1,0 +1,179 @@
+@page "/AccountEdit"
+@page "/AccountEdit/{EmailId?}"
+@using static Utils.RegexUtils;
+@using MongoDB.Driver
+@using TagReporter.Services
+@using MongoDB.Bson
+@using TagReporter.Domains
+@using System.Diagnostics.CodeAnalysis
+
+@inject AccountService _accountService
+@inject NavigationManager _navigationManager
+@inject NotificationService _notificationService
+
+@attribute [Authorize(Roles = "ADMIN")]
+
+@if (string.IsNullOrEmpty(EmailId))
+{
+    <h3>Добавление</h3>
+}
+else
+{
+    <h3>Изменение @_account.Email</h3>
+}
+<RadzenTemplateForm Data="_account">
+    <div class="w-50 mb-3">
+        <RadzenLabel Component="Email" Text="Почта"/>
+        <RadzenTextBox Class="w-100" Name="Email" type="email" @bind-Value="_account.Email" 
+                       Disabled="@(!string.IsNullOrEmpty(EmailId))"/>
+        <RadzenRequiredValidator Component="Email" Text="Требуется почта"/>
+    </div>
+    <div class="w-50 mb-3">
+        <RadzenLabel Component="Password" Text="Пароль"/>
+        <RadzenPassword Class="w-100" Name="Password" @bind-Value="_account.Password"/>
+        <RadzenRequiredValidator Component="Password" Text="Требуется пароль"/>
+    </div>
+    <div class="mb-3">
+        @if (string.IsNullOrEmpty(EmailId))
+        {
+            <RadzenButton Text="Добавить" Click="AddAccount"/>
+        }
+        else
+        {
+            <RadzenButton Text="Применить" Click="EditAccount"/>
+        }
+    </div>
+</RadzenTemplateForm>
+
+@code {
+
+    private class Account
+    {
+        public string? Email;
+        public string? Password;
+    }
+    
+    [Parameter, AllowNull]
+    public string EmailId { get; set; }
+
+    private bool IsValid { get; set; }
+
+    private Account _account = new ();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrEmpty(EmailId)) return;
+        try
+        {
+            var acc = await _accountService.FindOne(EmailId);
+            if (acc == null) return;
+            _account.Email = acc.Email;
+        }
+        catch (Exception)
+        {
+            _navigationManager.NavigateTo("Accounts");
+        }
+    }
+
+    private async Task AddAccount()
+    {
+        if (!ValidateEmail(_account.Email))
+        {
+            _notificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Detail = "Неверная почта!",
+                Duration = 5000,
+                Summary = "Ошибка"
+            });
+            return;
+        }
+
+        IsValid = string.IsNullOrEmpty(_account.Email) || string.IsNullOrEmpty(_account.Password);
+        if (IsValid)
+        {
+            _notificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Detail = "Неверная почта или пароль!",
+                Duration = 5000,
+                Summary = "Ошибка"
+            });
+            return;
+        }
+
+        try
+        {
+            await _accountService.CreateAsync(new WstAccount(_account.Email!, _account.Password!));
+            _notificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Detail = "Аккаунт добавлен",
+                Duration = 5000,
+                Summary = "Успех"
+            });
+            _account.Email = _account.Password = "";
+        }
+        catch (Exception e)
+        {
+            _notificationService.Notify(new NotificationMessage
+            {
+                Detail = e.Message,
+                Severity = NotificationSeverity.Error,
+                Summary = "Ошибка",
+                Duration = 5000
+            });
+        }
+    }
+
+    private async Task EditAccount(MouseEventArgs obj)
+    {
+        if (!ValidateEmail(_account.Email))
+        {
+            _notificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Detail = "Неверная почта!",
+                Duration = 5000,
+                Summary = "Ошибка"
+            });
+            return;
+        }
+
+        IsValid = !string.IsNullOrEmpty(_account.Email) || !string.IsNullOrEmpty(_account.Password);
+        if (!IsValid)
+        {
+            _notificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Detail = "Неверная почта или пароль!",
+                Duration = 5000,
+                Summary = "Ошибка"
+            });
+            return;
+        }
+
+        try
+        {
+            await _accountService.Update(EmailId, new WstAccount(_account.Email!, _account.Password!));
+            _notificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Detail = "Аккаунт добавлен",
+                Duration = 5000,
+                Summary = "Успех"
+            });
+        }
+        catch (Exception e)
+        {
+            _notificationService.Notify(new NotificationMessage
+            {
+                Detail = e.Message,
+                Severity = NotificationSeverity.Error,
+                Summary = "Ошибка",
+                Duration = 5000
+            });
+        }
+    }
+
+}

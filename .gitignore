@@ -1,0 +1,10 @@
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+./TagReporter/AppData
+./TagReporter/appsettings.json
+./TagReporter/appsettings.Development.json
+./TagReporter/Development
+.idea

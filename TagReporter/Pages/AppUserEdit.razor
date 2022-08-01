@@ -1,0 +1,219 @@
+@page "/AppUserEdit"
+@page "/AppUserEdit/{id?}"
+@using TagReporter.Domains
+@using TagReporter.Services
+@using TagReporter.DTOs
+@using System.Diagnostics.CodeAnalysis
+@attribute [Authorize(Roles = "ADMIN")]
+
+@inject UserService UserService
+@inject RoleService RoleService
+@inject NotificationService NotificationService
+
+@if (!string.IsNullOrEmpty(Id)
+    )
+{
+    <h3>Редактирование данных пользователя</h3>
+}
+else
+{
+    <h3>Создание пользователя</h3>
+    <div class="mb-3">
+        <h4 class="mb-3">Имя пользователя</h4>
+        <RadzenTextBox @bind-Value="Username"/>
+    </div>
+}
+
+<div class="mb-3">
+    <h4 class="mb-3">Почта</h4>
+    <RadzenTextBox @bind-Value="Email"/>
+</div>
+
+<div class="mb-3">
+    <h4 class="mb-3">Пароль</h4>
+    <RadzenPassword @bind-Value="Password"/>
+</div>
+<RadzenDataGrid class="mb-3" Data="_roles" TItem="ApplicationRole" AllowRowSelectOnRowClick="true" AllowFiltering="true"
+                AllowPaging="true" PageSize="20"
+                FilterMode="FilterMode.Advanced"
+                @ref="_roleGrid" SelectionMode="DataGridSelectionMode.Multiple"
+                AllowSorting="true" @bind-Value=@_selectedRoles>
+    <Columns>
+        <RadzenDataGridColumn TItem="ApplicationRole" Width="40px" Sortable="false" Filterable="false">
+            <HeaderTemplate>
+                <RadzenCheckBox TriState="false" TValue="bool"
+                                Value="@(_roles.Any(i => _selectedRoles != null && _selectedRoles.Contains(i)))"
+                                Change="@(args => _selectedRoles = args ? _roles.ToList() : null)">
+                </RadzenCheckBox>
+            </HeaderTemplate>
+            <Template Context="data">
+                <RadzenCheckBox TriState="false" Value="@(_selectedRoles != null && _selectedRoles.Contains(data))"
+                                TValue="bool">
+                </RadzenCheckBox>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApplicationRole" Property="Name" Title="Роль" Sortable="true" Filterable="true"/>
+    </Columns>
+</RadzenDataGrid>
+
+<div class="mb-3">
+    @if (!string.IsNullOrEmpty(Id))
+    {
+        <RadzenButton Icon="edit" Text="Изменить" Click="Edit"></RadzenButton>
+    }
+    else
+    {
+        <RadzenButton Icon="add" Text="Создать" Click="CreateUser"></RadzenButton>
+    }
+</div>
+
+@code {
+
+    [Parameter, AllowNull]
+    public string Id { get; set; }
+
+    private string? Username { get; set; }
+    private string? Email { get; set; }
+    private string? Password { get; set; }
+
+    private List<ApplicationRole> _roles = new();
+    private IList<ApplicationRole>? _selectedRoles = new List<ApplicationRole>();
+    private RadzenDataGrid<ApplicationRole>? _roleGrid;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _roles = RoleService.FindAll();
+
+        if (string.IsNullOrEmpty(Id)) return;
+        var user = await UserService.FindUserById(Id);
+        if (user == null) return;
+        Email = user.Email;
+        var roles = await UserService.FindRoles(user);
+        if (roles.Count == 0) return;
+        foreach (var found in roles.Select(roleName => _roles.FirstOrDefault(appRole => appRole.Name == roleName))
+            .Where(found => found != null))
+        {
+            if (found == null) continue;
+            _selectedRoles?.Add(found);
+        }
+    }
+
+    private async Task CreateUser()
+    {
+        var user = new User
+        {
+            Username = Username,
+            Password = Password,
+            Email = Email
+        };
+        try
+        {
+            var (created, errors) = await UserService.Create(user);
+            var foundUser = await UserService.FindUserByUsername(user.Username!);
+            if (_selectedRoles == null) return;
+
+            var (updated, updateRolesErrors) = await UserService.UpdateRoles(foundUser, _selectedRoles.Select(r => r.Name).AsEnumerable());
+            errors.AddRange(updateRolesErrors);
+            if (errors.Count > 0)
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Detail = errors.Aggregate("", (acc, e) => acc + e + "\n"),
+                    Duration = 5000,
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Ошибка"
+                });
+            
+            if (created && updated)
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Detail = "Пользователь создан",
+                    Duration = 5000,
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Успех"
+                });
+                Username = Email = Password = "";
+            }
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = $"{e}",
+                Duration = 5000,
+                Severity = NotificationSeverity.Error,
+                Summary = "Ошибка"
+            });
+        }
+    }
+
+    private async Task Edit()
+    {
+        var user = await UserService.FindUserById(Id);
+        if (user == null) throw new Exception("Пользователь не найден");
+
+        if (!string.IsNullOrEmpty(Email) || Email != user.Email)
+        {
+            var (updated, errorsEmail) = await UserService.UpdateEmail(user, Email!);
+            if (errorsEmail.Count > 0)
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Detail = errorsEmail.Aggregate("", (acc, e) => acc + e + "\n"),
+                    Duration = 5000,
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Ошибка"
+                });
+            if (updated)
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Detail = "Почта обновлена",
+                    Duration = 5000,
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Успех"
+                });
+        }
+        if (!string.IsNullOrEmpty(Password))
+        {
+            var (updated, errorsPassword) = await UserService.UpdatePassword(user, Password);
+            if (updated)
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Detail = "Пароль обновлен",
+                    Duration = 5000,
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Успех"
+                });
+            if (errorsPassword.Count > 0)
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Detail = errorsPassword.Aggregate("", (acc, e) => acc + e + "\n"),
+                    Duration = 5000,
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Ошибка"
+                });
+        }
+
+        if (_selectedRoles != null)
+        {
+            var (updated, errorsRoles) =
+                await UserService.UpdateRoles(user, _selectedRoles.Select(r => r.Name));
+            if (updated)
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Detail = "Роли обновлены",
+                    Duration = 5000,
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Успех"
+                });
+            if (errorsRoles.Count > 0)
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Detail = errorsRoles.Aggregate("", (acc, e) => acc + e + "\n"),
+                    Duration = 5000,
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Ошибка"
+                });
+        }
+    }
+
+}

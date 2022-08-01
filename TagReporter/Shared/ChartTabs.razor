@@ -1,0 +1,84 @@
+@using Plotly.Blazor.LayoutLib
+@using Plotly.Blazor.LayoutLib.XAxisLib
+@using Title = Plotly.Blazor.LayoutLib.Title
+
+<RadzenTabs TabPosition="TabPosition.Top">
+    <Tabs>
+        <RadzenTabsItem Text="Температура">
+            <PlotlyChart style="height: 50vh; min-height: 400px" Config="_chartConfig" Layout="_tempLayout" Data="TempData" @ref="Chart"/>
+        </RadzenTabsItem>
+        <RadzenTabsItem Text="Влажность">
+            <PlotlyChart style="height: 50vh; min-height: 400px" Config="_chartConfig" Layout="_capLayout" Data="CapData" @ref="Chart"/>
+        </RadzenTabsItem>
+    </Tabs>
+</RadzenTabs>
+
+@code {
+    [Parameter] public List<ITrace>? TempData { get; set; }
+    [Parameter] public List<ITrace>? CapData { get; set; }
+    
+    private readonly Config _chartConfig = new()
+    {
+        Responsive = true,
+    };
+    
+    private readonly Layout _tempLayout = new()
+    {
+        Title = new Title
+        {
+            Text = "График температуры"
+        },
+        YAxis = new List<YAxis>
+        {
+            new()
+            {
+                Title = new Plotly.Blazor.LayoutLib.YAxisLib.Title
+                {
+                    Text = "Температура (С)"
+                }
+            }
+        },
+        XAxis = new List<XAxis>
+        {
+            new()
+            {
+                Title = new Plotly.Blazor.LayoutLib.XAxisLib.Title
+                {
+                    Text = "Время"
+                },
+                Type = TypeEnum.Date
+            }
+        }
+    };
+
+    private readonly Layout _capLayout = new()
+    {
+        Title = new Title
+        {
+            Text = "График влажности"
+        },
+        YAxis = new List<YAxis>
+        {
+            new()
+            {
+                Title = new Plotly.Blazor.LayoutLib.YAxisLib.Title
+                {
+                    Text = "Влажность (%)"
+                }
+            }
+        },
+        XAxis = new List<XAxis>
+        {
+            new()
+            {
+                Title = new Plotly.Blazor.LayoutLib.XAxisLib.Title
+                {
+                    Text = "Время"
+                },
+                Type = TypeEnum.Date
+            }
+        }
+    };
+    
+    public PlotlyChart Chart = new();
+}

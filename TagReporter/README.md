@@ -1,0 +1,1 @@
+After 'git pull' do not forget to change admin database password! 

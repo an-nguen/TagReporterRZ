@@ -1,0 +1,159 @@
+@page "/ZoneEdit"
+@page "/ZoneEdit/{id:int?}"
+
+@using TagReporter.Services
+@using TagReporter.Domains
+@using Tag = TagReporter.Domains.Tag
+
+@inject ZoneService ZoneService
+@inject TagService TagService
+@inject NotificationService NotificationService
+
+@attribute [Authorize]
+
+@if (Id == null)
+{
+    <h3>Создание</h3>
+}
+else
+{
+    <h3>Изменение @Name</h3>
+}
+<div class="mb-3">
+    <h4 class="mb-3">Название</h4>
+    <RadzenTextBox placeholder="Введите название" @bind-Value="Name"/>
+</div>
+@if (_selectedTags is {Count: > 0 })
+{
+    <div class="mb-3">
+        <p> Выбрано @_selectedTags!.Count тегов </p>
+    </div>   
+}
+<RadzenDataGrid Data="_tags" TItem="Tag" AllowRowSelectOnRowClick="true" AllowFiltering="true"
+                AllowPaging="true" PageSize="20"
+                FilterMode="FilterMode.Simple"
+                @ref="_tagGrid" SelectionMode="DataGridSelectionMode.Multiple"
+                AllowSorting="true" @bind-Value=@_selectedTags>
+    <Columns>
+        <RadzenDataGridColumn TItem="Tag" Width="40px" Sortable="false" Filterable="false">
+            <HeaderTemplate>
+                <RadzenCheckBox TriState="false" TValue="bool"
+                                Value="@(_tags.Any(i => _selectedTags != null && _selectedTags.Contains(i)))"
+                                Change="@(args => _selectedTags = args ? _tagGrid?.View.ToList() : null)">
+                </RadzenCheckBox>
+            </HeaderTemplate>
+            <Template Context="data">
+                <RadzenCheckBox TriState="false" Value="@(_selectedTags != null && _selectedTags.Contains(data))"
+                                TValue="bool">
+                </RadzenCheckBox>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Tag" Property="Name" Title="Тег" Filterable="true"/>
+        <RadzenDataGridColumn TItem="Tag" Property="TagManagerName" Title="Менеджер" Filterable="true"/>
+    </Columns>
+</RadzenDataGrid>
+<div class="mb-3">
+    @if (Id == null)
+    {
+        <RadzenButton Icon="add" Text="Создать" Click="Create"></RadzenButton>
+    }
+    else
+    {
+        <RadzenButton Icon="edit" Text="Применить" Click="EditZone"></RadzenButton>
+    }
+</div>
+
+@code {
+
+    [Parameter]
+    public int? Id { get; set; }
+
+    private bool NameIsNull { get; set; }
+
+    private string? Name { get; set; }
+
+    private List<Tag> _tags = new();
+    private IList<Tag>? _selectedTags;
+    private RadzenDataGrid<Tag>? _tagGrid;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tags = await TagService.FindAll();
+        var zone = await ZoneService.FindOne(Id ?? 0);
+        if (zone == null) return;
+        Name = zone.Name;
+        _selectedTags = ZoneService.FindTagsByZone(zone);
+    }
+
+    private async Task Create(MouseEventArgs obj)
+    {
+        if (string.IsNullOrEmpty(Name))
+        {
+            NameIsNull = true;
+            return;
+        }
+
+        var newZone = new Zone
+        {
+            Name = Name,
+            TagUuids = _selectedTags?.Select(t => t.Uuid).ToList() ?? new List<Guid>()
+        };
+        try
+        {
+            await ZoneService.CreateAsync(newZone);
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = "Зона добавлена",
+                Severity = NotificationSeverity.Success,
+                Summary = "Успех",
+                Duration = 5000
+            });
+            Name = "";
+            _selectedTags = null;
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = e.Message,
+                Severity = NotificationSeverity.Error,
+                Summary = "Ошибка",
+                Duration = 5000
+            });
+        }
+    }
+
+    private async Task EditZone(MouseEventArgs obj)
+    {
+        NameIsNull = string.IsNullOrEmpty(Name);
+        if (NameIsNull) return;
+
+        var zone = new Zone
+        {
+            Name = Name,
+            TagUuids = _selectedTags?.Select(t => t.Uuid).ToList() ?? new List<Guid>(),
+        };
+        try
+        {
+            await ZoneService.Update(Id, zone);
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = "Зона обновлена",
+                Severity = NotificationSeverity.Success,
+                Summary = "Успех",
+                Duration = 5000
+            });
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = e.Message,
+                Severity = NotificationSeverity.Error,
+                Summary = "Ошибка",
+                Duration = 5000
+            });
+        }
+    }
+
+}

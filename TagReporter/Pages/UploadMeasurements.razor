@@ -1,0 +1,117 @@
+@page "/UploadMeasurements"
+@using System.IO
+@using Microsoft.AspNetCore.Hosting
+@using Microsoft.Extensions.Logging
+@using TagReporter.Domains
+@using TagReporter.Services
+@inject WiredTagMeasurementService WiredTagMeasurementService
+@inject NotificationService NotificationService
+@inject ILogger<UploadMeasurements> Logger
+@inject IWebHostEnvironment Environment
+
+@attribute [Authorize]
+
+<h3>Загрузка измерений</h3>
+<div class="mb-3">
+    <h4>1. Загрузка файла</h4>
+    <InputFile accept="text/csv" OnChange="@LoadFile" required></InputFile>
+</div>
+<RadzenDataGrid @ref="_dataGrid" Data="_measurements" TItem="Measurement" AllowPaging="true" AllowSorting="true">
+    <Columns>
+        <RadzenDataGridColumn TItem="Measurement" Property="DateTime" Title="Дата Время" Sortable="true"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Measurement" Property="Temperature" Title="Температура" Sortable="true"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Measurement" Property="Humidity" Title="Влажность" Sortable="true"></RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+<div class="mb-3">
+    <h4 class="mb-3">ИД тега</h4>
+    <RadzenNumeric Min="1" TValue="int?" placeholder="Введите ИД тега" @bind-Value="TagId"/>
+</div>
+<div class="mb-3">
+    <h4 class="mb-3">ИД места</h4>
+    <RadzenNumeric Min="1" TValue="int?" placeholder="Введите ИД места" @bind-Value="PositionId"/>
+</div>
+<div class="mb-3">
+    <RadzenButton Text="Загрузить" Icon="upload" ButtonStyle="ButtonStyle.Primary"
+                  Click="@SaveMeasurements"
+                  Disabled="TagId == null || PositionId == null || _measurements.Count == 0">
+                    
+    </RadzenButton>
+</div>
+@if (_loading)
+{
+    <RadzenProgressBar Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate"/>
+}
+
+@code {
+    private List<Measurement> _measurements = new();
+    private RadzenDataGrid<Measurement>? _dataGrid;
+    private string? _path;
+
+    private int? TagId { get; set; }
+    private int? PositionId { get; set; }
+
+    private bool _loading;
+
+    private async Task LoadFile(InputFileChangeEventArgs args)
+    {
+        _loading = true;
+        try
+        {
+            if (!Directory.Exists(Path.Combine(Environment.ContentRootPath, Environment.EnvironmentName, "unsafe_uploads")))
+                Directory.CreateDirectory(Path.Combine(Environment.ContentRootPath, Environment.EnvironmentName, "unsafe_uploads"));
+            _path = Path.Combine(Environment.ContentRootPath, Environment.EnvironmentName, "unsafe_uploads",
+                Path.GetRandomFileName());
+            await using var fs = new FileStream(_path, FileMode.Create);
+            var stream = args.File.OpenReadStream(1024 * 1024 * 32);
+            await stream.CopyToAsync(fs);
+            stream.Close();
+            fs.Close();
+            _measurements = await WiredTagMeasurementService.ParseMeasurement(_path!);
+            await _dataGrid!.Reload();
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Ошибка", $"{e.Message}");
+            Logger.LogError(e.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+
+    private async Task SaveMeasurements()
+    {
+        _loading = true;
+        try
+        {
+            if (TagId == null || PositionId == null)
+                throw new Exception("ИД тега/места не указан");
+            _measurements.ForEach(m =>
+            {
+                m.TagId = (int)TagId;
+                m.PositionId = (int)PositionId;
+            });
+            var (saved, hasDuplication) = await WiredTagMeasurementService.UploadMeasurements(_measurements);
+            if (!hasDuplication)
+                NotificationService.Notify(NotificationSeverity.Success, "Успех", $"{saved} записей измерении загружены");
+            else
+            {
+                NotificationService.Notify(NotificationSeverity.Warning, "Внимание", $"Часть данных уже есть в базе данных");
+                NotificationService.Notify(NotificationSeverity.Success, "Успех", $"Загружено {saved}");
+            }
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Ошибка", $"{e.Message}");
+            Logger.LogError(e.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+}

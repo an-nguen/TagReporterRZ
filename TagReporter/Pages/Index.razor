@@ -1,0 +1,150 @@
+@page "/"
+@using TagReporter.Services
+@using BlazorDownloadFile
+@using TagReporter.Domains
+@using Plotly.Blazor.Traces.ScatterLib
+@using System.IO
+@using System.Net.Mime
+
+@inject ZoneService ZoneService
+@inject ReportService ReportService
+@inject IBlazorDownloadFileService BlazorDownloadFileService
+
+@attribute [Authorize]
+
+
+<div class="d-flex flex-row">
+    <h3 class="me-auto">Страница формирования отчётов</h3>
+</div>
+<RadzenDataGrid TItem="Zone" AllowRowSelectOnRowClick="true" AllowFiltering="true"
+                @ref="_zoneGrid"
+                SelectionMode="DataGridSelectionMode.Multiple"
+                ExpandMode="DataGridExpandMode.Single"
+                AllowSorting="true" Data="@_zones" @bind-Value=@_selectedZones>
+    <Template Context="zone">
+        <RadzenDataGrid TItem="Tag" Data="zone.Tags">
+            <Columns>
+                <RadzenDataGridColumn TItem="Tag" Title="Тег" Property="Name"></RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Tag" Title="Менеджер" Property="TagManagerName"></RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </Template>
+    <Columns>
+        <RadzenDataGridColumn TItem="Zone" Width="40px" Sortable="false" Filterable="false">
+            <HeaderTemplate>
+                <RadzenCheckBox TriState="false" TValue="bool"
+                                Value="@(_zones.Any(i => _selectedZones != null && _selectedZones.Contains(i)))"
+                                Change="@(args => _selectedZones = args ? _zones.ToList() : null)">
+                </RadzenCheckBox>
+            </HeaderTemplate>
+            <Template Context="data">
+                <RadzenCheckBox TriState="false" Value="@(_selectedZones != null && _selectedZones.Contains(data))"
+                                TValue="bool">
+                </RadzenCheckBox>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="Zone" Property="Name" Title="Название"/>
+    </Columns>
+</RadzenDataGrid>
+<div class="mb-3">
+    <p>После каждого создания отчёта нужно подождать 15-30 секунд</p>
+</div>
+@if (IsLoading)
+{
+    <RadzenProgressBar Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate"/>
+}
+<div class="mb-3">
+    <RadzenDatePicker @bind-Value="StartDate" DateFormat="d" TValue="DateTimeOffset" ShowTime="false" ShowSeconds="false"></RadzenDatePicker>
+    <RadzenDatePicker @bind-Value="EndDate" DateFormat="d" TValue="DateTimeOffset" ShowTime="false" ShowSeconds="false"></RadzenDatePicker>
+</div>
+
+<div class="mb-3">
+    <RadzenButton Disabled="@(IsLoading)" Click="LoadMeasurements" Text="Загрузить"></RadzenButton>
+    <RadzenButton Disabled="@(!IsMeasurementsLoaded || IsLoading)" Click="DownloadMeasurements" Text="Скачать"></RadzenButton>
+</div>
+<ChartTabs @ref="_chartTabs" TempData="_tempData" CapData="_capData"></ChartTabs>
+
+@code {
+    private ChartTabs? _chartTabs;
+    
+    private List<Zone> _zones = new();
+    private IList<Zone>? _selectedZones;
+    private RadzenDataGrid<Zone>? _zoneGrid;
+
+    private DateTimeOffset StartDate { get; set; } = DateTimeOffset.Now.AddDays(-1);
+    private DateTimeOffset EndDate { get; set; } = DateTimeOffset.Now;
+
+    private bool IsLoading { get; set; }
+    private bool IsMeasurementsLoaded { get; set; }
+    
+    private List<ITrace> _tempData = new();
+    private List<ITrace> _capData = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _zones = await ZoneService.FindAllAsync();
+    }
+
+    private async Task LoadMeasurements()
+    {
+        if (_selectedZones == null) return;
+        IsLoading = true;
+        var selected = new List<Zone>(_selectedZones);
+        foreach (var selectedZone in _selectedZones)
+        {
+            selectedZone.TagUuids = selectedZone.Tags.Select(t => t.Uuid).ToList();
+        }
+        await ReportService.LoadMeasurements(selected, StartDate, EndDate);
+        _tempData.Clear();
+        _capData.Clear();
+        selected.ForEach(z =>
+        {
+            z.Tags.ForEach(t =>
+            {
+                if (t.Measurements.Count == 0) return;
+                var tempScatter = new Scatter
+                {
+                    Name = t.Name,
+                    Mode = ModeFlag.Lines | ModeFlag.Markers,
+                    X = new List<object>(),
+                    Y = new List<object>()
+                };
+
+                var capScatter = new Scatter
+                {
+                    Name = t.Name,
+                    Mode = ModeFlag.Lines | ModeFlag.Markers,
+                    X = new List<object>(),
+                    Y = new List<object>()
+                };
+                var values = t.Measurements.ToList();
+                var x = values.Select(v => v.DateTime as object).ToList();
+                var temp = values.Select(v => v.TemperatureValue as object).ToList();
+                var cap = values.Select(v => v.Cap as object).ToList();
+                tempScatter.X.AddRange(x);
+                capScatter.X.AddRange(x);
+
+                tempScatter.Y.AddRange(temp);
+                capScatter.Y.AddRange(cap);
+
+                _tempData.Add(tempScatter);
+                _capData.Add(tempScatter);
+            });
+        });
+        if (_chartTabs != null) await _chartTabs.Chart.Update();
+        IsMeasurementsLoaded = true;
+        IsLoading = false;
+    }
+
+    private async Task<DownloadFileResult?> DownloadMeasurements()
+    {
+        IsLoading = true;
+        if (_selectedZones == null) return null;
+        var selected = new List<Zone>(_selectedZones);
+        var (filepath, filename) = ReportService.GenerateArchiveOfReports(selected, (DateTimeOffset)StartDate, (DateTimeOffset)EndDate);
+        var bytes = await File.ReadAllBytesAsync(filepath);
+        IsLoading = false;
+        return await BlazorDownloadFileService.DownloadFile(filename, bytes, MediaTypeNames.Application.Zip);
+    }
+
+}

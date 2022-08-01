@@ -1,0 +1,11 @@
+﻿<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:ss="urn:shemas-jetbrains-com:settings-storage-xaml" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+	<s:String x:Key="/Default/Environment/AssemblyExplorer/XmlDocument/@EntryValue">&lt;AssemblyExplorer&gt;
+  &lt;Assembly Path="/home/an/.nuget/packages/microsoft.aspnetcore.components.forms/6.0.4/lib/net6.0/Microsoft.AspNetCore.Components.Forms.dll" /&gt;
+  &lt;Assembly Path="/home/an/.nuget/packages/radzen.blazor/3.18.9/lib/net5.0/Radzen.Blazor.dll" /&gt;
+  &lt;Assembly Path="/home/an/.nuget/packages/smblibrary.adapters/1.4.8/lib/netstandard2.0/SMBLibrary.Adapters.dll" /&gt;
+&lt;/AssemblyExplorer&gt;</s:String>
+	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=e2878f76_002Da354_002D45f8_002D8d98_002D731be2c2cca3/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" IsActive="True" Name="MongoBookDBContext_Constructor_Success" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;
+  &lt;TestAncestor&gt;
+    &lt;TestId&gt;xUnit::B487F287-305B-4B4E-9DE2-78F749A165B3::net6.0::TagReporter.Tests.AppDbContextUnitTest&lt;/TestId&gt;
+  &lt;/TestAncestor&gt;
+&lt;/SessionState&gt;</s:String></wpf:ResourceDictionary>

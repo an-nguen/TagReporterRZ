@@ -1,0 +1,80 @@
+@* @page "/WiredTagEdit" *@
+@* @page "/WiredTagEdit/{id:string?}" *@
+@* @using TagReporter.Services *@
+@* @using TagReporter.Domains *@
+@* *@
+@* @inject WiredTagService WiredTagService *@
+@* @inject NotificationService NotificationService *@
+@* @inject NavigationManager NavigationManager *@
+@* *@
+@* @attribute [Authorize] *@
+@* *@
+@* @if (Id == null) *@
+@* { *@
+@*     <h3>Создание</h3> *@
+@* } *@
+@* else *@
+@* { *@
+@*     <h3>Изменение @Name</h3> *@
+@* } *@
+@* <div class="mb-3"> *@
+@*     <h4 class="mb-3">Название тега</h4> *@
+@*     <RadzenTextBox placeholder="Введите название" @bind-Value="Name"/> *@
+@* </div> *@
+@* <div class="mb-3"> *@
+@*     <h4 class="mb-3">MAC адрес</h4> *@
+@*     <RadzenTextBox placeholder="Введите MAC адрес" @bind-Value="MacAddress"/> *@
+@* </div> *@
+@* <div class="mb-3"> *@
+@*     @if (Id == null) *@
+@*     { *@
+@*         <RadzenButton Icon="add" Text="Создать" Click="Create"></RadzenButton> *@
+@*     } *@
+@*     else *@
+@*     { *@
+@*         <RadzenButton Icon="edit" Text="Применить" Click="Update"></RadzenButton> *@
+@*     } *@
+@* </div> *@
+@* @code { *@
+@*     [Parameter] *@
+@*     public string? Id { get; set; } *@
+@* *@
+@*     private string? Name { get; set; } = string.Empty; *@
+@*     private string? MacAddress { get; set; } = string.Empty; *@
+@*      *@
+@*     protected override async Task OnInitializedAsync() *@
+@*     { *@
+@*         if (Id == null) return; *@
+@*         var wiredTag = await WiredTagService.FindAsync(Guid.Parse(Id)); *@
+@*         if (wiredTag == null) NavigationManager.NavigateTo("WiredTags"); *@
+@*         Name = wiredTag!.Name; *@
+@*         MacAddress = wiredTag.MacAddress; *@
+@*     } *@
+@* *@
+@*     private async Task Create() *@
+@*     { *@
+@*         try *@
+@*         { *@
+@*             await WiredTagService.CreateAsync(new WiredTag(Name ?? string.Empty, MacAddress ?? string.Empty)); *@
+@*             NotificationService.Notify(NotificationSeverity.Success, "Успех", "Тег успешно создан"); *@
+@*         } *@
+@*         catch (Exception e) *@
+@*         { *@
+@*             NotificationService.Notify(NotificationSeverity.Error, "Ошибка", $"{e.Message}"); *@
+@*         } *@
+@*     } *@
+@* *@
+@*     private async Task Update() *@
+@*     { *@
+@*         try *@
+@*         { *@
+@*             await WiredTagService.UpdateAsync(Guid.Parse(Id!), new WiredTag(Name ?? string.Empty, MacAddress ?? string.Empty)); *@
+@*             NotificationService.Notify(NotificationSeverity.Success, "Успех", "Тег успешно обновлен"); *@
+@*             NavigationManager.NavigateTo("WiredTags"); *@
+@*         } *@
+@*         catch (Exception e) *@
+@*         { *@
+@*             NotificationService.Notify(NotificationSeverity.Error, "Ошибка", $"{e.Message}"); *@
+@*         } *@
+@*     } *@
+@* } *@

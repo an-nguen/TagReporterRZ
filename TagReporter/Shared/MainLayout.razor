@@ -1,0 +1,73 @@
+@inherits LayoutComponentBase
+@inject NavigationManager _navigationManager
+@inject DialogService _dialogService
+@inject TooltipService _tooltipService
+@inject ContextMenuService _contextMenuService
+@inject NotificationService _notificationService
+
+<RadzenDialog/>
+<RadzenNotification/>
+<RadzenTooltip/>
+<RadzenContextMenu/>
+
+<RadzenLayout>
+    <ChildContent>
+        <RadzenHeader>
+            <ChildContent>
+                <div class="row justify-content-start align-items-center">
+                    <div class="col-6 d-flex align-items-center">
+                        <RadzenSidebarToggle Click="@SidebarToggle0Click">
+                        </RadzenSidebarToggle>
+                        <RadzenLabel Text="TagReporterRZ">
+                        </RadzenLabel>
+                    </div>
+                    <div class="col-6 text-right">
+                        <AuthorizeView>
+                            <RadzenProfileMenu Visible="@(context.User != null)">
+                                <Template>
+                                    <RadzenLabel Text="@($"{context.User!.Identity?.Name}")">
+                                    </RadzenLabel>
+                                    <RadzenLabel style="width: 5px" Text=" ">
+                                    </RadzenLabel>
+                                    <RadzenGravatar Email="@(context.User.Identity?.Name)">
+                                    </RadzenGravatar>
+                                </Template>
+                                <ChildContent>
+                                    <RadzenProfileMenuItem Text="Выйти" Path="/SignIn/Logout" Icon="logout">
+                                    </RadzenProfileMenuItem>
+                                </ChildContent>
+                            </RadzenProfileMenu>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            </ChildContent>
+        </RadzenHeader>
+        <RadzenBody @ref="_body0">
+            <ChildContent>
+                <RadzenContentContainer Name="main">
+                    @Body
+                </RadzenContentContainer>
+            </ChildContent>
+        </RadzenBody>
+        <RadzenSidebar @ref="_sidebar0">
+            <ChildContent>
+                <RadzenPanelMenu style="height: 100%">
+                    <NavMenu></NavMenu>
+                </RadzenPanelMenu>
+            </ChildContent>
+        </RadzenSidebar>
+    </ChildContent>
+</RadzenLayout>
+
+@code {
+    private RadzenBody? _body0;
+    private RadzenSidebar? _sidebar0;
+
+    private async Task SidebarToggle0Click(dynamic args)
+    {
+        await InvokeAsync(() => { _sidebar0?.Toggle(); });
+
+        await InvokeAsync(() => { _body0?.Toggle(); });
+    }
+
+}

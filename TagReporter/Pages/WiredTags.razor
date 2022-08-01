@@ -1,0 +1,67 @@
+@* @page "/WiredTags" *@
+@* @using TagReporter.Domains *@
+@* @using TagReporter.Services *@
+@* *@
+@* @inject NavigationManager NavigationManager *@
+@* @inject WiredTagService WiredTagService *@
+@* @inject NotificationService NotificationService *@
+@* *@
+@* <h3>Проводные теги</h3> *@
+@* *@
+@* @attribute [Authorize] *@
+@* *@
+@* <div class="mb-3 row justify-content-start align-items-center"> *@
+@*     <div class="col-6 d-flex align-items-center"> *@
+@*         <h3>Зоны</h3> *@
+@*     </div> *@
+@*     <div class="col-6 text-right"> *@
+@*         <RadzenButton Icon="add" Text="Добавить" Click="AddTag"></RadzenButton> *@
+@*     </div> *@
+@* </div> *@
+@* <RadzenDataGrid @ref="_wiredTagGrid" TItem="WiredTag" Data="_wiredTags" AllowSorting="true"> *@
+@*     <Columns> *@
+@*         <RadzenDataGridColumn TItem="WiredTag" Property="Name" Title="Название" Sortable="true"></RadzenDataGridColumn> *@
+@*         <RadzenDataGridColumn TItem="WiredTag" Property="MacAddress" Title="MAC адрес" Sortable="true"></RadzenDataGridColumn> *@
+@*         <RadzenDataGridColumn TItem="WiredTag" Title="Действия"> *@
+@*             <Template Context="data"> *@
+@*                 <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Secondary" Click="() => EditTag(data.Id)"></RadzenButton> *@
+@*                 <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => RemoveTag(data)"></RadzenButton> *@
+@*             </Template> *@
+@*         </RadzenDataGridColumn> *@
+@*     </Columns> *@
+@* </RadzenDataGrid> *@
+@* *@
+@* *@
+@* @code { *@
+@*     private RadzenDataGrid<WiredTag>? _wiredTagGrid; *@
+@*     private List<WiredTag> _wiredTags = new(); *@
+@* *@
+@*     protected override async Task OnInitializedAsync() *@
+@*     { *@
+@*         _wiredTags = await WiredTagService.FindAllAsync(); *@
+@*     } *@
+@* *@
+@*     private void AddTag() *@
+@*     { *@
+@*         NavigationManager.NavigateTo("WiredTagEdit"); *@
+@*     } *@
+@* *@
+@*     private void EditTag(Guid id) *@
+@*     { *@
+@*         NavigationManager.NavigateTo($"WiredTagEdit/{id.ToString()}"); *@
+@*     } *@
+@* *@
+@*     private async Task RemoveTag(WiredTag tag) *@
+@*     { *@
+@*         try *@
+@*         { *@
+@*             await WiredTagService.RemoveAsync(tag.Id); *@
+@*             _wiredTags.Remove(tag); *@
+@*         } *@
+@*         catch (Exception e) *@
+@*         { *@
+@*             NotificationService.Notify(NotificationSeverity.Error, "Ошибка", $"{e.Message}"); *@
+@*         } *@
+@*     } *@
+@* *@
+@* } *@

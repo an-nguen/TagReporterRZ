@@ -1,0 +1,28 @@
+﻿<AuthorizeView>
+    <RadzenPanelMenuItem Text="Главная страница" Path="/" Icon="dashboard">
+    </RadzenPanelMenuItem>
+    <RadzenPanelMenuItem Text="Задачи" Path="RecurrentJobs" Icon="task">
+    </RadzenPanelMenuItem>
+    <RadzenPanelMenuItem Text="Отчёты по тегам" Path="TagReport" Icon="summarize">
+    </RadzenPanelMenuItem>
+    <RadzenPanelMenuItem Text="Зоны" Path="Zones" Icon="crop_square">
+    </RadzenPanelMenuItem>
+    <RadzenPanelMenuItem Text="Проводные теги" Icon="dns">
+        <RadzenPanelMenuItem Text="Загрузка данных датчиков" Path="UploadMeasurements" Icon="upload">
+        </RadzenPanelMenuItem>
+        <RadzenPanelMenuItem Text="График данных" Path="WiredTagMeasurements" Icon="assessment">
+        </RadzenPanelMenuItem>
+    </RadzenPanelMenuItem>
+
+    <RadzenPanelMenuItem Text="Аккаунты" Path="Accounts" Icon="account_tree">
+    </RadzenPanelMenuItem>
+    @if (context.User.IsInRole("ADMIN"))
+    {
+        <RadzenPanelMenuItem Icon="admin_panel_settings" Text="Панель администратора">
+            <RadzenPanelMenuItem Text="Пользователи" Icon="people" Path="AppUsers">
+            </RadzenPanelMenuItem>
+            <RadzenPanelMenuItem Text="Роли" Icon="lock_open" Path="AppRoles">
+            </RadzenPanelMenuItem>
+        </RadzenPanelMenuItem>
+    }
+</AuthorizeView>

@@ -1,0 +1,15 @@
+services:
+  tagreporter:
+    container_name: tagreporter
+    build: ./
+    image: tagreporter:tag
+    ports:
+      - "80:80"
+      - "443:443"
+    expose:
+      - 80
+      - 443
+    environment: 
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_ADMIN_NAME=admin
+      - ASPNETCORE_ADMIN_PASSWORD=q.XlEYOEPjgt8vyDvgoB6tflhxEF8WgmW

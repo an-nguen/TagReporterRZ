@@ -1,0 +1,49 @@
+@page "/AppRoleCreate"
+@using TagReporter.Services
+@using TagReporter.DTOs
+
+@inject RoleService RoleService
+@inject NotificationService NotificationService
+@attribute [Authorize(Roles = "ADMIN")]
+
+<h3>Добавление роли</h3>
+
+<div class="mb-3">
+    <h4 class="mb-3">Название роли</h4>
+    <RadzenTextBox class="form-control" type="text" id="usernameField" @bind-Value="Name"/>
+</div>
+
+<div class="mb-3">
+    <RadzenButton Icon="add" Text="Добавить" Click="CreateRole"></RadzenButton>
+</div>
+
+@code {
+    private string? Name { get; set; }
+    
+    private async Task CreateRole()
+    {
+        var role = new Role
+        {
+            Name = Name,
+        };
+        var (success, errors) = await RoleService.Create(role);
+        if (success)
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = "Роль успешна создана",
+                Summary = "Успех",
+                Duration = 5000,
+                Severity = NotificationSeverity.Success
+            });
+
+        if (errors.Count > 0) 
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = errors.Aggregate("", (acc, e) => acc + e + "\n"),
+                Severity = NotificationSeverity.Error,
+                Summary = "Ошибка",
+                Duration = 5000,
+            });
+    }
+
+}

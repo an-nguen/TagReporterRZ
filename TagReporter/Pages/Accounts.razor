@@ -1,0 +1,72 @@
+@page "/Accounts"
+@using TagReporter.Domains
+@using TagReporter.Services
+
+@inject AccountService AccountService
+@inject NavigationManager NavigationManager
+@inject NotificationService NotificationService
+
+@attribute [Authorize(Roles = "ADMIN")]
+
+<div class="mb-3 row justify-content-start align-items-center">
+    <div class="col-6 d-flex align-items-center">
+        <h3>Аккаунты</h3>
+    </div>
+    <div class="col-6 text-right">
+        <RadzenButton Icon="add" Text="Добавить" Click="AddAccount"></RadzenButton>
+    </div>
+</div>
+
+<RadzenDataGrid @ref="_accountGrid" TItem="WstAccount" Data="AccountList" AllowSorting="true">
+    <Columns>
+        <RadzenDataGridColumn TItem="WstAccount" Property="Email" Title="Почта" Sortable="true"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="WstAccount" Title="Действия">
+            <Template Context="data">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Secondary" Click="() => EditAccount(data)"></RadzenButton>
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => RemoveAccount(data)"></RadzenButton>
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    private List<WstAccount> AccountList { get; set; } = new();
+    private RadzenDataGrid<WstAccount>? _accountGrid;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AccountList = await AccountService.FindAll();
+    }
+
+    private void AddAccount()
+    {
+        NavigationManager.NavigateTo("AccountEdit");
+    }
+
+    private void EditAccount(WstAccount wstAccount)
+    {
+        NavigationManager.NavigateTo($"AccountEdit/{wstAccount.Email}");
+    }
+
+    private async Task RemoveAccount(WstAccount wstAccount)
+    {
+        try
+        {
+            await AccountService.Delete(wstAccount.Email);
+            AccountList.Remove(wstAccount);
+            if (_accountGrid != null)
+                await _accountGrid.Reload();
+        } 
+        catch (Exception e)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Detail = e.Message,
+                Severity = NotificationSeverity.Error,
+                Duration = 5000,
+                Summary = "Error"
+            });
+        }
+    }
+
+}

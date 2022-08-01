@@ -1,0 +1,93 @@
+@page "/RecurrentJobs"
+@using Hangfire.Storage
+@using Hangfire
+@using TagReporter.Services
+@inject NavigationManager NavigationManager
+@inject NotificationService NotificationService
+@inject ReportService ReportService
+
+@attribute [Authorize] 
+
+<div class="mb-3 row justify-content-start align-items-center">
+    <div class="col-6 d-flex align-items-center">
+        <h3>Повторяющийся задачи</h3>
+    </div>
+    <div class="col-6 text-right">
+        <RadzenButton Icon="add" Text="Создать задачу" Click="AddRecurrentJob"></RadzenButton>
+    </div>
+</div>
+<RadzenDataGrid TItem="RecurringJobDto" @ref="_dataGrid" Data="_jobs" AllowColumnResize="true">
+    <Columns>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="Id" Title="ID"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="Cron" Title="Cron"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="Queue" Title="Queue"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="Job" Title="Job"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="LoadException" Title="Load Execution"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="NextExecution" Title="Next Execution"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="LastExecution" Title="Last Execution"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="CreatedAt" Title="CreatedAt"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="Removed" Title="Removed"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="Error" Title="Error"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Property="RetryAttempt" TItle="Retry Attempt"></RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RecurringJobDto" Title="Actions">
+            <Template Context="j">
+                <RadzenButton Icon="play_arrow" ButtonStyle="ButtonStyle.Secondary" Click="() => TriggerJob(j)"></RadzenButton>
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Secondary" Click="() => EditJob(j)"></RadzenButton>
+                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => RemoveJob(j)"></RadzenButton>
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+
+@code {
+    private List<RecurringJobDto> _jobs = new();
+    private RadzenDataGrid<RecurringJobDto>? _dataGrid;
+
+    protected override Task OnInitializedAsync()
+    {
+        UpdateJobs();
+        return Task.CompletedTask;
+    }
+
+    private void AddRecurrentJob() =>
+        NavigationManager.NavigateTo("EditJob");
+
+    private void RemoveJob(RecurringJobDto recurringJobDto)
+    {
+        try
+        {
+            _jobs.Remove(recurringJobDto);
+            ReportService.RemoveJob(recurringJobDto);
+            UpdateJobs();
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Ошибка", e.Message);
+        }
+    }
+
+    private void EditJob(RecurringJobDto recurringJobDto) =>
+        NavigationManager.NavigateTo($"EditJob/{recurringJobDto.Id}");
+
+    private void TriggerJob(RecurringJobDto recurringJobDto)
+    {
+        try
+        {
+            ReportService.TriggerJob(recurringJobDto);
+            NotificationService.Notify(NotificationSeverity.Success, "Успех", "Запущено");
+            UpdateJobs();
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Ошибка", e.Message);
+        }
+    }
+
+    private void UpdateJobs()
+    {
+        _jobs = JobStorage.Current.GetConnection().GetRecurringJobs();
+        _dataGrid?.Reload();
+    }
+
+}

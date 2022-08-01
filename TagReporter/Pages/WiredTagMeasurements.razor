@@ -1,0 +1,132 @@
+@page "/WiredTagMeasurements"
+@using TagReporter.Services
+@using Plotly.Blazor.Traces.ScatterLib
+@using TagReporter.Domains
+@using System.IO
+@using BlazorDownloadFile
+
+@inject NotificationService NotificationService
+@inject WiredTagMeasurementService WiredTagMeasurementService
+@inject IBlazorDownloadFileService BlazorDownloadFileService
+@inject ReportService ReportService
+
+<h3>График температурных тегов</h3>
+<RadzenDropDown AllowClear="true" AllowFiltering="true" Multiple="true"
+                class="w-100" Data="@_tagIds"
+                @bind-Value="@_selectedIds">
+</RadzenDropDown>
+<div class="mb-3">
+    <RadzenDatePicker @bind-Value="StartDate" DateFormat="d" TValue="DateTimeOffset" ShowTime="false" ShowSeconds="false"></RadzenDatePicker>
+    <RadzenDatePicker @bind-Value="EndDate" DateFormat="d" TValue="DateTimeOffset" ShowTime="false" ShowSeconds="false"></RadzenDatePicker>
+</div>
+<div class="mb-3">
+    <RadzenButton Disabled="_loading || _selectedIds.ToList().Count == 0"
+                  Click="@(_ => LoadMeasurements())"
+                  ButtonStyle="ButtonStyle.Primary"
+                  Text="Загрузить">
+    </RadzenButton>
+    <RadzenButton Disabled="_loading || _selectedIds.ToList().Count == 0 || !_measurements.Any()"
+                  Click="@(_ => DownloadMeasurements())"
+                  ButtonStyle="ButtonStyle.Primary"
+                  Icon="download"
+                  Text="Скачать">
+    </RadzenButton>
+</div>
+<ChartTabs @ref="_chartTabs" TempData="_tempData" CapData="_capData"></ChartTabs>
+
+@if (_loading)
+{
+    <RadzenProgressBar Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate"/>
+}
+
+@code {
+    private IEnumerable<int> _tagIds = new List<int>();
+    private IEnumerable<int> _selectedIds = new List<int>();
+    private ChartTabs? _chartTabs;
+    private List<ITrace> _tempData = new();
+    private List<ITrace> _capData = new();
+    private List<Measurement> _measurements = new();
+    private bool _loading;
+
+    private DateTimeOffset StartDate { get; set; } = DateTimeOffset.Now.AddDays(-1);
+    private DateTimeOffset EndDate { get; set; } = DateTimeOffset.Now;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tagIds = await WiredTagMeasurementService.GetTagIdsAsync();
+        EndDate = await WiredTagMeasurementService.GetMaxDateTime();
+        StartDate = await WiredTagMeasurementService.GetMinDateTime();
+    }
+
+    private async Task LoadMeasurements()
+    {
+        _loading = true;
+        if (_selectedIds.ToList().Count == 0)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Ошибка", "Теги не выбраны");
+            return;
+        }
+        _tempData.Clear();
+        _capData.Clear();
+        _measurements.Clear();
+        foreach (var id in _selectedIds)
+        {
+            var measurements =
+                await WiredTagMeasurementService.GetMeasurementsAsync(id, StartDate, EndDate);
+            _measurements.AddRange(measurements);
+            
+            var tempScatter = new Scatter
+            {
+                Name = id.ToString(),
+                Mode = ModeFlag.Lines | ModeFlag.Markers,
+                X = new List<object>(),
+                Y = new List<object>()
+            };
+
+            var capScatter = new Scatter
+            {
+                Name = id.ToString(),
+                Mode = ModeFlag.Lines | ModeFlag.Markers,
+                X = new List<object>(),
+                Y = new List<object>()
+            };
+            var values = measurements.ToList();
+            var x = values.Select(v => v.DateTime as object).ToList();
+            var temp = values.Select(v => v.Temperature as object).ToList();
+            var cap = values.Select(v => v.Humidity as object).ToList();
+            tempScatter.X.AddRange(x);
+            capScatter.X.AddRange(x);
+
+            tempScatter.Y.AddRange(temp);
+            capScatter.Y.AddRange(cap);
+
+            _tempData.Add(tempScatter);
+            _capData.Add(capScatter);
+        }
+        _chartTabs?.Chart.Update();
+        NotificationService.Notify(NotificationSeverity.Success, "Успех", "Данные загружены");
+        _loading = false;
+    }
+
+    private async Task<DownloadFileResult?> DownloadMeasurements()
+    {
+        if (_measurements.Count == 0) return null;
+        _loading = true;
+        try
+        {
+            var (filepath, filename) = ReportService.GenerateReport(_measurements, StartDate, EndDate);
+            var bytes = await File.ReadAllBytesAsync(filepath);
+            return await BlazorDownloadFileService.DownloadFile(filename, bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception e)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Ошибка", $"{e.Message}");
+            return null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+}
