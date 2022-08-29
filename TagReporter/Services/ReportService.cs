@@ -15,8 +15,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using Newtonsoft.Json;
-using OfficeOpenXml;
-using OfficeOpenXml.Drawing.Chart;
 using Radzen;
 using SMBLibrary;
 using SMBLibrary.Client;
@@ -27,6 +25,9 @@ using TagReporter.Utils;
 
 namespace TagReporter.Services;
 
+/// <summary>
+/// Сервис создания и отправки отчётов
+/// </summary>
 public class ReportService
 {
     private readonly AccountService _accountService;
@@ -40,7 +41,7 @@ public class ReportService
     private readonly SmbSettings _smbSettings;
 
     private string? Message { get; set; }
-    
+
     public ReportService(TagService tagService, IWebHostEnvironment webHostEnvironment,
         EmailService emailService, ILogger<ReportService> logger, IHttpClientFactory httpClientFactory,
         AccountService accountService, ZoneService zoneService, NotificationService notificationService,
@@ -84,18 +85,15 @@ public class ReportService
         if (nextDate == null) return;
 
         var today = DateTime.UtcNow.ToLocalTime();
+        // Set time to 00:00
         var endDate = today.AddHours(-today.Hour + beginTimeInHour).AddMinutes(-today.Minute)
             .AddSeconds(-today.Second);
         var startDate = endDate.AddHours(-timeOffsetInHours);
 
-        var bodyBuilder = new BodyBuilder
-        {
-            TextBody = $"{DateTime.Now:f}"
-        };
-
+        // Clean up all tags from database
         _tagService.RemoveAll();
 
-        // 1. Load tags from cloud server
+        // 1. Load tags from server wirelesstag.net
         var getAccountsTask = _accountService.FindAll();
         getAccountsTask.Wait();
         var accounts = getAccountsTask.Result;
@@ -106,16 +104,26 @@ public class ReportService
             _tagService.StoreTagsFromCloud(acc).Wait();
         }
 
-        // 2. Load measurements from cloud server 
+        // 2. Load measurements from server wirelesstag.net
         foreach (var zone in zones)
             zone.TagUuids = _zoneService.FindTagUuidsByZone(zone);
-
         LoadMeasurements(zones, startDate, endDate).Wait();
+
+        // 3. Save report files on a file server
         SaveReportFiles(zones, savePath, startDate, endDate);
-        
+
         // 4. Form archive of reports
-        var (filepath, filename) = GenerateArchiveOfReports(zones, startDate, endDate);
-        // 5. Send email
+        var (filepath, _) = GenerateArchiveOfReports(zones, startDate, endDate);
+        // 5. Send email with archive of reports
+        SendEmail(recipientEmailList, filepath);
+    }
+
+    private void SendEmail(List<string> recipientEmailList, string filepath)
+    {
+        var bodyBuilder = new BodyBuilder
+        {
+            TextBody = $"{DateTime.Now:f}"
+        };
         bodyBuilder.Attachments.Add(filepath);
         recipientEmailList.ForEach(email =>
         {
@@ -170,7 +178,13 @@ public class ReportService
         return zones.Select(zone => GenerateReport(zone, startDateTime, endDateTime, dirPath))
             .Select(filepath => (filepath, Path.GetFileName(filepath))).ToList();
     }
-
+    /// <summary>
+    /// Создаёт отчёты и помещает в архив 
+    /// </summary>
+    /// <param name="zones"></param>
+    /// <param name="startDateTime"></param>
+    /// <param name="endDateTime"></param>
+    /// <returns> кортеж Tuple(путь к архиву вместе с именем, имя архива)</returns>
     public (string, string) GenerateArchiveOfReports(List<Zone> zones, DateTimeOffset startDateTime,
         DateTimeOffset endDateTime)
     {
@@ -191,13 +205,13 @@ public class ReportService
     }
 
     /// <summary>
-    /// Generate XLSX reports
+    /// Создаёт XLSX отчёт
     /// </summary>
-    /// <param name="zone">Zone instance that contains Tags with measurements</param>
-    /// <param name="startDateTime"></param>
-    /// <param name="endDateTime"></param>
+    /// <param name="zone">экземпляр класса Zone который содержит список объектов Tags с заполненым списком Measurements</param>
+    /// <param name="startDateTime">Дата начала</param>
+    /// <param name="endDateTime">Дата конца</param>
     /// <returns>
-    ///     Tuple(filepath, filename)
+    ///     кортеж Tuple(путь к файлу с его именем, имя файла)
     /// </returns>
     public (string, string) GenerateReport(Zone zone, DateTimeOffset startDateTime,
         DateTimeOffset endDateTime)
@@ -268,12 +282,20 @@ public class ReportService
 
     private string GenerateReport(Zone zone, DateTimeOffset startDate, DateTimeOffset endDate, string dirPath)
     {
-        var filepath = GenerateXlsxReportFile(zone, startDate, endDate, dirPath);
+        var filepath = ExcelUtils.GenerateXlsxReportFile(zone, startDate, endDate, dirPath);
         Message += $"[{DateTime.Now:G}] Файл сформирован ({zone.Name}) \n";
 
         return filepath;
     }
 
+    /// <summary>
+    /// Загружает данные измерении тегов с wirelesstag.com. Теги должны быть зашарены для того чтобы можно загрузить данные.
+    /// Этот метод заполняет список тегов Tags с данными измерениями Measurements в экземпляре Zone
+    /// </summary>
+    /// <param name="zone"></param>
+    /// <param name="startDate"></param>
+    /// <param name="endDate"></param>
+    /// <returns>Ничего. Только заполняет экземпляр класса Zone определённый в параметре.</returns>
 
     private async Task DownloadMeasurements(Zone zone, DateTimeOffset startDate, DateTimeOffset endDate)
     {
@@ -322,196 +344,7 @@ public class ReportService
         }
     }
 
-    // Excel chart that can be printed on A4 paper
-    private static ExcelChart CreatePredefinedScatterLineChart(ExcelWorksheet worksheet, string chartName,
-        string title, TagDataType dataType)
-    {
-        var chart =
-            worksheet.Drawings.AddChart(chartName, eChartType.XYScatterSmoothNoMarkers);
-
-        chart.Title.Text = title;
-        chart.Title.Font.Size = 18;
-        chart.SetPosition(1, 10, 0, 32);
-        // Default column size is 64px, row size 20px
-        chart.SetSize(896, 580);
-
-        chart.YAxis.Title.Text = dataType switch
-        {
-            TagDataType.Temperature => "Температура (ºС)",
-            TagDataType.Humidity => "Влажность (%)",
-            _ => "Неизвестный тип данных"
-        };
-        chart.XAxis.Title.Text = "Время";
-        chart.XAxis.Format = "dd.MM.yyyy HH:mm:ss";
-        chart.XAxis.TextBody.Rotation = 270;
-
-        chart.YAxis.Title.Rotation = 270;
-        chart.YAxis.Format = "0.00";
-        chart.YAxis.MajorTickMark = eAxisTickMark.Out;
-        chart.YAxis.MinorTickMark = eAxisTickMark.None;
-
-        chart.Legend.Position = eLegendPosition.Right;
-        return chart;
-    }
-
-    private static void SetMinMaxTimeAxis(ExcelChart chart, DateTimeOffset startDate, DateTimeOffset endDate)
-    {
-        chart.XAxis.MinValue = startDate.DateTime.ToOADate();
-        chart.XAxis.MaxValue = endDate.DateTime.ToOADate();
-    }
-
-    private static void SetMinMaxYAxis(ExcelChart chart, List<MeasurementRecord> measurements, TagDataType dataType)
-    {
-        double minValue, maxValue;
-
-        switch (dataType)
-        {
-            case TagDataType.Temperature:
-                minValue = measurements.Count > 0 ? measurements.Min(m => m.TemperatureValue) - 3 : 0;
-                maxValue = measurements.Count > 0 ? measurements.Max(m => m.TemperatureValue) + 3 : 40;
-                break;
-            case TagDataType.Humidity:
-                minValue = measurements.Count > 0 ? measurements.Min(m => m.Cap) - 3 : 0;
-                maxValue = measurements.Count > 0 ? measurements.Max(m => m.Cap) + 3 : 100;
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(dataType), $"Unknown data type ${dataType}");
-        }
-
-        chart.YAxis.MinValue = minValue;
-        chart.YAxis.MaxValue = maxValue;
-    }
-
-
-    private static string GenerateXlsxReportFile(Zone zone, DateTimeOffset startDate, DateTimeOffset endDate,
-        string dirPath)
-    {
-        var date = DateTime.Now.ToString("dd-MM-yyyy HH-mm");
-        var filename = $@"{zone.Name}_{date}.xlsx";
-
-        using var fs = File.Create($"{dirPath}/{filename}");
-        using var package = new ExcelPackage(fs);
-        /* 1. Create sheets */
-        // Create sheets with chart 
-        var tempChartSheet = package.Workbook.Worksheets.Add("График");
-        tempChartSheet.HeaderFooter.FirstHeader.RightAlignedText = "Ф01-СОП-03.04\nВерсия 01";
-        var humidityChartSheet = package.Workbook.Worksheets.Add("График влажности");
-        humidityChartSheet.HeaderFooter.FirstHeader.RightAlignedText = "Ф01-СОП-03.04\nВерсия 01";
-        // Create sheets with measurements
-        var tempMSheet = package.Workbook.Worksheets.Add($"Данные измерении (Температуры)");
-        var humidityMSheet = package.Workbook.Worksheets.Add($"Данные измерении (Влажности)");
-        // Create sheet of list of tags info
-        var tagSheet = package.Workbook.Worksheets.Add("Теги");
-        /* 2. Create charts */
-        // Create temperature chart
-        var tempChart =
-            CreatePredefinedScatterLineChart(tempChartSheet, "scatterLineChart0",
-                $"Журнал мониторинга температуры\n{zone.Name}\n{startDate:dd.MM.yyyy HH:mm:ss} - {endDate:dd.MM.yyyy HH:mm:ss}",
-                TagDataType.Temperature);
-        // Create humidity chart
-        var humidityChart =
-            CreatePredefinedScatterLineChart(humidityChartSheet, "scatterLineChart0",
-                $"Журнал мониторинга влажности\n{zone.Name}\n{startDate:dd.MM.yyyy HH:mm:ss} - {endDate:dd.MM.yyyy HH:mm:ss}",
-                TagDataType.Humidity);
-        // Specify min and max values of Time axis
-        SetMinMaxTimeAxis(tempChart, startDate, endDate);
-        SetMinMaxTimeAxis(humidityChart, startDate, endDate);
-        // Specify min and max values of Temperature/Humidity axis
-        var tagMeasurements = new List<MeasurementRecord>();
-        zone.Tags.ForEach(t => { tagMeasurements.AddRange(t.Measurements); });
-        SetMinMaxYAxis(tempChart, tagMeasurements, TagDataType.Temperature);
-        SetMinMaxYAxis(humidityChart, tagMeasurements, TagDataType.Humidity);
-
-        // Populate sheet of measurements
-        PopulateMSheet(zone, TagDataType.Temperature, tempMSheet, tempChart);
-        PopulateMSheet(zone, TagDataType.Humidity, humidityMSheet, humidityChart);
-
-        PopulateTagSheet(tagSheet, zone.Tags);
-
-        package.Save();
-
-        zone.Tags.ForEach(t => t.Measurements.Clear());
-        return Path.Combine(dirPath, filename);
-    }
-
-    private static void PopulateMSheet(Zone zone, TagDataType dataType, ExcelWorksheet sheet, ExcelChart chart)
-    {
-        var dateTimePointer = 1; // A
-        var valuePointer = 2; // B
-
-        foreach (var tag in zone.Tags)
-        {
-            var rowNumber = 1;
-            sheet.Cells[rowNumber, dateTimePointer].Value = "Дата Время";
-            sheet.Cells[rowNumber, valuePointer].Value = tag.Name;
-
-            foreach (var m in tag.Measurements)
-            {
-                rowNumber++;
-                // Set date time
-                sheet.Cells[rowNumber, dateTimePointer].Value = m.DateTime.DateTime;
-                sheet.Cells[rowNumber, dateTimePointer].Style.Numberformat.Format =
-                    "dd.MM.yyyy HH:mm:ss";
-                // According to data type set value
-                sheet.Cells[rowNumber, valuePointer].Value = dataType switch
-                {
-                    TagDataType.Temperature => Math.Round(m.TemperatureValue, 6),
-                    TagDataType.Humidity => Math.Round(m.Cap, 6),
-                    _ => throw new ArgumentOutOfRangeException(nameof(dataType), $"Unknown data type ${dataType}")
-                };
-            }
-
-            var series = chart.Series.Add(
-                sheet.Cells[2, valuePointer, rowNumber, valuePointer],
-                sheet.Cells[2, dateTimePointer, rowNumber, dateTimePointer]
-            );
-            series.HeaderAddress = sheet.Cells[1, valuePointer];
-
-            sheet.Cells[rowNumber, dateTimePointer].AutoFitColumns();
-            sheet.Cells[rowNumber, valuePointer].AutoFitColumns();
-
-            dateTimePointer += 2;
-            valuePointer += 2;
-        }
-    }
-
-    private static void PopulateTagSheet(ExcelWorksheet sheet, List<Tag> tags)
-    {
-        List<string> columns = new()
-        {
-            "Аккаунт",
-            "Менеджер",
-            "MAC",
-            "Тег",
-        };
-        // Set columns
-        var rowPtr = 1;
-        var colPtr = 1;
-
-        columns.ForEach(c =>
-        {
-            sheet.Cells[rowPtr, colPtr].Value = c;
-            colPtr++;
-        });
-        rowPtr++;
-        tags.ForEach(t =>
-        {
-            if (t.Account != null)
-            {
-                sheet.Cells[rowPtr, 1].Value = t.Account.Email;
-                sheet.Cells[rowPtr, 1].AutoFitColumns();
-            }
-
-            sheet.Cells[rowPtr, 2].Value = t.TagManagerName;
-            sheet.Cells[rowPtr, 2].AutoFitColumns();
-            sheet.Cells[rowPtr, 3].Value = t.TagManagerMac;
-            sheet.Cells[rowPtr, 3].AutoFitColumns();
-            sheet.Cells[rowPtr, 4].Value = t.Name;
-            sheet.Cells[rowPtr, 4].AutoFitColumns();
-
-            rowPtr++;
-        });
-    }
+    
 
     public void RemoveJob(RecurringJobDto recurringJobDto)
     {
